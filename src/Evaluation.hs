@@ -1,7 +1,7 @@
 
 module Evaluation (
   app, inlApp, appSp, eval, force, forceAll, forceMetas, appCl,
-  appCl', quote, quote0, eval0, nf0, zonk
+  appCl', quote, quote0, eval0, nf0
   ) where
 
 import qualified LvlSet as LS
@@ -193,40 +193,3 @@ quote0 ms = quote ms 0
 nf0 :: MetaCxt -> QuoteOption -> Tm -> Tm
 nf0 ms opt t = quote0 ms opt (eval0 ms t)
 {-# inline nf0 #-}
-
-
--- Zonking (unfolding all metas in terms, but otherwise trying to minimize output)
---------------------------------------------------------------------------------
-
-zonkApps :: MetaCxt -> Env -> Lvl -> Tm -> (# Tm | Val #)
-zonkApps ms env l = \case
-  Meta x    -> let t = meta ms x in (# | t #)
-  App t u i -> case zonkApps ms env l t of
-                 (# t | #) -> let u' = zonk ms env l u in (# App t u' i | #)
-                 (# | t #) -> let t' = inlApp ms t (eval ms env u) i in (# | t' #)
-  t         -> let t' = zonk ms env l t in (# t' | #)
-
--- | Unfold all solved metas in a term.
-zonk :: MetaCxt -> Env -> Lvl -> Tm -> Tm
-zonk ms env l t = let
-  go     = zonk ms env l; {-# inline go #-}
-  goBind = zonk ms (EDef env (VLocalVar l SId)) (l + 1); {-# inline goBind #-}
-  goApps = zonkApps ms env l; {-# inline goApps #-}
-  quote  = Evaluation.quote ms l UnfoldMetas; {-# inline quote #-}
-  in case t of
-    LocalVar x     -> LocalVar x
-    TopVar x v     -> TopVar x v
-    Let x a t u    -> Let x (go a) (go t) (goBind u)
-    App t u i      -> case goApps t of
-                        (# t | #) -> App t (go u) i
-                        (# | t #) -> quote $ inlApp ms t (eval ms env u) i
-    Lam xi t       -> Lam xi (goBind t)
-    InsertedMeta x -> runIO $ MC.read ms x >>= \case
-                        Unsolved _     ->
-                          pure (InsertedMeta x)
-                        Solved _ mask _ v ->
-                          pure $ quote $ appSp ms v (maskEnv env mask)
-    Meta x         -> quote $ meta ms x
-    Pi xi a b      -> Pi xi (go a) (goBind b)
-    Irrelevant     -> Irrelevant
-    U              -> U

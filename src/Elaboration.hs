@@ -8,7 +8,7 @@ import qualified MetaCxt as MC
 import qualified Presyntax as P
 import qualified SymTable as ST
 import qualified TopCxt as Top
-import qualified Unification as Unif
+import qualified UnificationTyped as Unif
 
 import Common
 import CoreTypes
@@ -22,7 +22,7 @@ unify :: Cxt -> P.Tm -> G -> G -> IO ()
 unify cxt pt l r = do
   debug ["unify", showValOpt cxt (g1 l) UnfoldMetas, showValOpt cxt (g1 r) UnfoldMetas]
   let ecxt = ErrorCxt (mcxt cxt) (tbl cxt) (names cxt) (lvl cxt); {-# inline ecxt #-}
-  Unif.unify (mcxt cxt) (lvl cxt) (frz cxt) Rigid l r `catch` \case
+  Unif.unifyTy (mcxt cxt) (lvl cxt) (frz cxt) Rigid l r `catch` \case
      UnifyEx e -> throw $ UnifyExInCxt ecxt pt (g1 l) (g1 r) e
      _         -> impossible
 

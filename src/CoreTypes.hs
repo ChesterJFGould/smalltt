@@ -67,6 +67,7 @@ data Tm
   deriving Show
 
 data G   = G {g1, g2 :: ~Val}
+  deriving Show
 type GTy = G
 
 gjoin :: Val -> G

@@ -49,6 +49,7 @@ library
       SymTable
       TopCxt
       Unification
+      UnificationTyped
   other-modules:
       Paths_smalltt
   hs-source-dirs:
