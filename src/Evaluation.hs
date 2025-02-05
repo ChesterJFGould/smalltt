@@ -1,7 +1,6 @@
-
 module Evaluation (
   app, inlApp, appSp, eval, force, forceAll, forceMetas, appCl,
-  appCl', quote, quote0, eval0, nf0
+  appCl', quote--, quote0, eval0, nf0
   ) where
 
 import qualified LvlSet as LS
@@ -182,14 +181,14 @@ quote ms l opt t = let
 
 --------------------------------------------------------------------------------
 
-eval0 :: MetaCxt -> Tm -> Val
-eval0 ms = eval ms ENil
-{-# inline eval0 #-}
-
-quote0 :: MetaCxt -> QuoteOption -> Val -> Tm
-quote0 ms = quote ms 0
-{-# inline quote0 #-}
-
-nf0 :: MetaCxt -> QuoteOption -> Tm -> Tm
-nf0 ms opt t = quote0 ms opt (eval0 ms t)
-{-# inline nf0 #-}
+-- eval0 :: MetaCxt -> Tm -> Val
+-- eval0 ms = eval ms ENil
+-- {-# inline eval0 #-}
+-- 
+-- quote0 :: MetaCxt -> QuoteOption -> Val -> Tm
+-- quote0 ms = quote ms 0
+-- {-# inline quote0 #-}
+-- 
+-- nf0 :: MetaCxt -> QuoteOption -> Tm -> Tm
+-- nf0 ms opt t = quote0 ms opt (eval0 ms t)
+-- {-# inline nf0 #-}

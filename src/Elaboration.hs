@@ -1,4 +1,3 @@
-
 module Elaboration (elab) where
 
 import GHC.Exts
@@ -22,7 +21,7 @@ unify :: Cxt -> P.Tm -> G -> G -> IO ()
 unify cxt pt l r = do
   debug ["unify", showValOpt cxt (g1 l) UnfoldMetas, showValOpt cxt (g1 r) UnfoldMetas]
   let ecxt = ErrorCxt (mcxt cxt) (tbl cxt) (names cxt) (lvl cxt); {-# inline ecxt #-}
-  Unif.unifyTy (mcxt cxt) (lvl cxt) (frz cxt) Rigid l r `catch` \case
+  Unif.unifyTy (mcxt cxt) (tbl cxt) (lvl cxt) (frz cxt) Rigid l r `catch` \case
      UnifyEx e -> throw $ UnifyExInCxt ecxt pt (g1 l) (g1 r) e
      _         -> impossible
 
@@ -230,7 +229,7 @@ check cxt topT (G topA ftopA) = do
         Lam (NI (P.bind x) i) <$> (check cxt t $! (gjoin $! appCl' cxt b v))
 
     (t, VPi (NI x Impl) a b) ->
-      inserting cxt x \cxt v -> do
+      inserting cxt x (gjoin a) \cxt v -> do
         t <- check cxt t $! (gjoin $! appCl' cxt b v)
         pure (Lam (NI x Impl) t)
 

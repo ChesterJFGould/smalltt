@@ -8,10 +8,13 @@ import GHC.Exts
 
 import qualified MetaCxt as MC
 import qualified LvlSet as LS
+import qualified Map as M
 import Common
 import CoreTypes
 import Evaluation
 import Exceptions
+
+type TypeCxt = M.Map Lvl GTy
 
 --------------------------------------------------------------------------------
 
@@ -314,99 +317,37 @@ flexFlex ms l frz t x ~sp t' x' ~sp' =
   solve ms l frz x sp t' `catch` \_ ->
   solve ms l frz x' sp' t
 
-unifySp :: MetaCxt -> Lvl -> MetaVar -> ConvState -> Spine -> Spine -> IO Val
-unifySp = _
-{-
-unifySp ms l frz cs sp sp' = case (sp, sp') of
-  (SId,         SId          ) -> pure ()
+unifySp :: MetaCxt -> Lvl -> MetaVar -> ConvState -> GTy -> Spine -> Spine -> IO GTy
+unifySp ms l frz cs t sp sp' = case (sp, sp') of
+  (SId,         SId          ) -> pure t
   (SApp sp t _, SApp sp' t' _) -> unifySp ms l frz cs sp sp' >>
                                   unifyChk ms l frz cs (gjoin t) (gjoin t')
   _                            -> throw $ UnifyEx Conversion
--}
 
-unifyTy :: MetaCxt -> Lvl -> MetaVar -> ConvState -> G -> G -> IO ()
--- Because all A type iff A : U
-unifyTy mctx l frz cs a b = unifyChk mctx l frz cs a b VU
-{-
-unifyTy ms l frz cs (G topt ftopt) (G topt' ftopt') = let
-  go       = unifyTy ms l frz cs; {-# inline go #-}
-  goTy       = unifyTy ms l frz cs; {-# inline goTy #-}
-  go' t t' = go (gjoin t) (gjoin t'); {-# inline go' #-}
-  goTy' t t' = go (gjoin t) (gjoin t'); {-# inline goTy' #-}
-  err      = throw (UnifyEx Conversion); {-# inline err #-}
+unifyTy :: MetaCxt -> TypeCxt -> Lvl -> MetaVar -> ConvState -> G -> G -> IO ()
+-- Because forall A. A type = A : U
+unifyTy mctx tctx l frz cs a b = unifyChk mctx tctx l frz cs a b VU
 
-  goBindTy t t' =
-    let v = VLocalVar l SId
-    in unifyTy ms (l + 1) frz cs (gjoin $! appCl' ms t v)
-                               (gjoin $! appCl' ms t' v)
-  {-# inline goBindTy #-}
-
-  guardCS cs = when (cs == Flex) $ throw $ UnifyEx FlexSolution
-  {-# inline guardCS #-}
-
-  in do
-    -- turn off speculative conversion here:
-
-    -- t  <- forceAll ms ftopt
-    -- t' <- forceAll ms ftopt'
-    t  <- forceCS ms cs ftopt
-    t' <- forceCS ms cs ftopt'
-    case (t, t') of
-
-      -- rigid, canonical
-      (VPi (NI _ i) a b, VPi (NI _ i') a' b') | i == i' -> goTy' a a' >> goBindTy b b'
-      (VU              , VU                 )           -> pure ()
-
-      (VFlex x sp, VFlex x' sp')
-        | x == x'   -> unifySp ms l frz cs sp sp'
-        | otherwise -> guardCS cs >> flexFlex ms l frz topt x sp topt' x' sp'
-
-      (VUnfold h sp t, VUnfold h' sp' t') -> case cs of
-        Rigid | eqUH h h' -> unifySp ms l frz Flex sp sp'
-                                `catch` \_ -> unifyTy ms l frz Full (G topt t) (G topt' t')
-              | otherwise -> unifyTy ms l frz Rigid (G topt t) (G topt' t')
-        Flex  | eqUH h h' -> unifySp ms l frz Flex sp sp'
-              | otherwise -> err
-        _                 -> impossible
-
-      (VFlex x sp, t') -> do
-        guardCS cs
-        solve ms l frz x sp topt' `catch` \_ ->
-          solveLong ms l frz x sp t'
-
-      (t, VFlex x' sp') -> do
-        guardCS cs
-        solve ms l frz x' sp' topt `catch` \_ ->
-          solveLong ms l frz x' sp' t
-
-      (VUnfold h sp t, t') -> case cs of
-        Rigid -> go (G topt t) (G topt' t')
-        Flex  -> err
-        _     -> impossible
-      (t, VUnfold h' sp' t') -> case cs of
-        Rigid -> go (G topt t) (G topt' t')
-        Flex  -> err
-        _     -> impossible
-
-      (t, t') -> unifyCold ms l frz cs t t'
--}
-
-unifyChkClo :: MetaCxt -> Lvl -> MetaVar -> ConvState -> Closure -> Closure -> Val -> IO ()
-unifyChkClo ms l frz cs c c' t = do
+unifyChkClo :: MetaCxt -> TypeCxt -> Lvl -> MetaVar -> ConvState -> GTy -> Closure -> Closure -> Val -> IO ()
+unifyChkClo ms tctx l frz cs d c c' t = do
   let v = VLocalVar l SId
-  unifyChk ms (l + 1) frz cs (gjoin $! appCl' ms c v) (gjoin $! appCl ms c' v) t
+  unifyChk ms (M.insert l d tctx) (l + 1) frz cs (gjoin $! appCl' ms c v) (gjoin $! appCl ms c' v) t
 
-unifyChk :: MetaCxt -> Lvl -> MetaVar -> ConvState -> G -> G -> Val -> IO ()
-unifyChk ms l frz cs (G topt ftopt) (G topt' ftopt') ty = let
-  go       = unifyChk ms l frz cs; {-# inline go #-}
-  go' t t' = go (gjoin t) (gjoin t'); {-# inline go' #-}
+-- withLocal :: Lvl -> GTy -> SymTable -> (Lvl -> Val -> IO a) -> IO a
+-- withLocal l ty tbl a = do
+--   h <- ST.hash tbl 
+
+unifyChk :: MetaCxt -> TypeCxt -> Lvl -> MetaVar -> ConvState -> G -> G -> Val -> IO ()
+unifyChk ms tctx l frz cs (G topt ftopt) (G topt' ftopt') ty = let
+--   go       = unifyChk ms l frz cs; {-# inline go #-}
+--   go' t t' = go (gjoin t) (gjoin t'); {-# inline go' #-}
   err      = throw (UnifyEx Conversion); {-# inline err #-}
-
-  goBind t t' =
-    let v = VLocalVar l SId
-    in unifyChk ms (l + 1) frz cs (gjoin $! appCl' ms t v)
-                               (gjoin $! appCl' ms t' v)
-  {-# inline goBind #-}
+-- 
+--   goBind t t' =
+--     let v = VLocalVar l SId
+--     in unifyChk ms (l + 1) frz cs (gjoin $! appCl' ms t v)
+--                                (gjoin $! appCl' ms t' v)
+--  {-# inline goBind #-}
 
   guardCS cs = when (cs == Flex) $ throw $ UnifyEx FlexSolution
   {-# inline guardCS #-}
@@ -423,31 +364,34 @@ unifyChk ms l frz cs (G topt ftopt) (G topt' ftopt') ty = let
       (_, _, VPi _ d c) -> do
         let xv = VLocalVar l SId
         let xvg = gjoin xv
-        unifyChk ms (l + 1) frz cs (doAppG (G topt ftopt) xvg) (doAppG (G topt' ftopt') xvg) (doCloApp c xv)
+        unifyChk ms (M.insert l (gjoin d) tctx) (l + 1) frz cs (doAppG (G topt ftopt) xvg) (doAppG (G topt' ftopt') xvg) (doCloApp c xv)
       (VPi (NI _ i) d c, VPi (NI _ i') d' c', VU) | i == i' -> do
-        unifyChk ms l frz cs (gjoin d) (gjoin d') VU
-        unifyChkClo ms l frz cs c c' VU
+        let gd = gjoin d
+        unifyChk ms tctx l frz cs gd (gjoin d') VU
+        unifyChkClo ms tctx l frz cs gd c c' VU
       (VU, VU, VU) -> pure ()
       (VIrrelevant, _, _) -> pure ()
       (_, VIrrelevant, _) -> pure ()
+      (VLocalVar x sp, VLocalVar x' sp, _) | x == x' -> unifySp ms l frz cs (M.lookup x tctx) sp sp'
       (VUnfold h sp t, VUnfold h' sp' t', _) -> case cs of
         Rigid | eqUH h h' -> (unifySp ms l frz Flex sp sp' >> pure ())
-                                `catch` \_ -> unifyChk ms l frz Full (G topt t) (G topt' t') ty
-              | otherwise -> unifyChk ms l frz Rigid (G topt t) (G topt' t') ty
-        Flex  | eqUH h h' -> unifySp ms l frz Flex sp sp'
+                                `catch` \_ -> unifyChk ms tctx l frz Full (G topt t) (G topt' t') ty
+              | otherwise -> unifyChk ms tctx l frz Rigid (G topt t) (G topt' t') ty
+        Flex  | eqUH h h' -> _ -- unifySp ms l frz Flex sp sp'
               | otherwise -> err
         _                 -> impossible
       (VUnfold h sp t, _, _) -> case cs of
-        Rigid -> unifyChk ms l frz cs (G topt t) (G topt' t') ty
+        Rigid -> unifyChk ms tctx l frz cs (G topt t) (G topt' t') ty
         Flex  -> err
         _     -> impossible
       (_, VUnfold h' sp' t', _) -> case cs of
-        Rigid -> unifyChk ms l frz cs (G topt t) (G topt' t') ty
+        Rigid -> unifyChk ms tctx l frz cs (G topt t) (G topt' t') ty
         Flex  -> err
         _     -> impossible
-      (VFlex x sp, VFlex x' sp')
-        | x == x'   -> unifySp ms l frz cs sp sp'
+      (VFlex x sp, VFlex x' sp', _)
+        | x == x'   -> _ -- unifySp ms l frz cs sp sp'
         | otherwise -> guardCS cs >> flexFlex ms l frz topt x sp topt' x' sp'
+      (_, _, _) -> throw (UnifyEx Conversion)
     {-
     case (t, t', ty) of
       -- rigid, canonical
