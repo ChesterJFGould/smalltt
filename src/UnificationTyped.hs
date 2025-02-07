@@ -317,12 +317,16 @@ flexFlex ms l frz t x ~sp t' x' ~sp' =
   solve ms l frz x sp t' `catch` \_ ->
   solve ms l frz x' sp' t
 
-unifySp :: MetaCxt -> Lvl -> MetaVar -> ConvState -> GTy -> Spine -> Spine -> IO GTy
-unifySp ms l frz cs t sp sp' = case (sp, sp') of
+unifySp :: MetaCxt -> TypeCxt -> Lvl -> MetaVar -> ConvState -> GTy -> Spine -> Spine -> IO GTy
+unifySp ms tctx l frz cs t sp sp' = case (sp, sp') of
   (SId,         SId          ) -> pure t
-  (SApp sp t _, SApp sp' t' _) -> unifySp ms l frz cs sp sp' >>
-                                  unifyChk ms l frz cs (gjoin t) (gjoin t')
-  _                            -> throw $ UnifyEx Conversion
+  (SApp sp t _, SApp sp' t' _) -> do
+    (G _ ftyp) <- unifySp ms tctx l frz cs t sp sp'
+    typ' <- forceCS ms cs ftyp
+    let (VPi _ d c) = typ'
+    unifyChk ms tctx l frz cs (gjoin d) (gjoin t) (gjoin t')
+    return (gjoin (doCloApp c t))
+  _ -> throw $ UnifyEx Conversion
 
 unifyTy :: MetaCxt -> TypeCxt -> Lvl -> MetaVar -> ConvState -> G -> G -> IO ()
 -- Because forall A. A type = A : U
@@ -372,9 +376,9 @@ unifyChk ms tctx l frz cs (G topt ftopt) (G topt' ftopt') ty = let
       (VU, VU, VU) -> pure ()
       (VIrrelevant, _, _) -> pure ()
       (_, VIrrelevant, _) -> pure ()
-      (VLocalVar x sp, VLocalVar x' sp, _) | x == x' -> unifySp ms l frz cs (M.lookup x tctx) sp sp'
+      (VLocalVar x sp, VLocalVar x' sp', _) | x == x' -> unifySp ms tctx l frz cs (M.lookup x tctx) sp sp' >> return ()
       (VUnfold h sp t, VUnfold h' sp' t', _) -> case cs of
-        Rigid | eqUH h h' -> (unifySp ms l frz Flex sp sp' >> pure ())
+        Rigid | eqUH h h' -> (unifySp ms tctx l frz Flex _ sp sp' >> pure ())
                                 `catch` \_ -> unifyChk ms tctx l frz Full (G topt t) (G topt' t') ty
               | otherwise -> unifyChk ms tctx l frz Rigid (G topt t) (G topt' t') ty
         Flex  | eqUH h h' -> _ -- unifySp ms l frz Flex sp sp'
