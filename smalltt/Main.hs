@@ -107,9 +107,9 @@ loop st = do
                  let go' m | m == frz = pure ()
                      go' m = do
                        ADL.read (Top.mcxt (topCxt st)) (coerce m) >>= \case
-                         Unsolved _ ->
+                         Unsolved _ _ ->
                            putStrLn $ show m ++ " unsolved"
-                         Solved _ _ t _ ->
+                         Solved _ _ t _ _ ->
                            putStrLn $ show m ++ " = " ++ showTm0 st t
                        go' (m + 1)
                  go' m

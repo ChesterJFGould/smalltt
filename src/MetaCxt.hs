@@ -15,10 +15,10 @@ size :: MetaCxt -> IO Lvl
 size ms = coerce <$> ADL.size ms
 {-# inline size #-}
 
-fresh :: MetaCxt -> LvlSet -> IO Int
-fresh ms mask = do
+fresh :: MetaCxt -> GTy -> LvlSet -> IO Int
+fresh ms ty mask = do
   x <- ADL.size ms
-  ADL.push ms (Unsolved mask)
+  ADL.push ms (Unsolved mask ty)
   pure x
 {-# inlinable fresh #-}
 
@@ -30,7 +30,7 @@ solve :: MetaCxt -> MetaVar -> Tm -> Val -> IO ()
 solve ms x t ~v =  do
   ADL.unsafeRead ms (coerce x) >>= \case
     Solved{} -> impossible
-    Unsolved mask -> do
+    Unsolved mask ty -> do
       ref <- RF.new (-1)
-      ADL.write ms (coerce x) (Solved ref mask t v)
+      ADL.write ms (coerce x) (Solved ref mask t v ty)
 {-# inline solve #-}

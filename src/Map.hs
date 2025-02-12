@@ -8,7 +8,7 @@ module Map (
 type Map k v = k -> v
 
 empty :: v -> Map k v
-empty v = \_ -> v
+empty ~v = \_ -> v
 
 insert :: Eq k => k -> v -> Map k v -> Map k v
 insert k v m k'

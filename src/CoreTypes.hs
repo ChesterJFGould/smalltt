@@ -15,7 +15,7 @@ import Data.Bits
 -- Metacxt
 --------------------------------------------------------------------------------
 
-data MetaEntry = Unsolved LS.LvlSet | Solved (RF.Ref MetaVar) LS.LvlSet Tm ~Val
+data MetaEntry = Unsolved LS.LvlSet GTy | Solved (RF.Ref MetaVar) LS.LvlSet Tm ~Val GTy
 type MetaCxt = ADL.Array MetaEntry
 
 --------------------------------------------------------------------------------
@@ -200,8 +200,8 @@ prettyTm ms prec src ns t = go prec ns t where
 
     mask = runIO do
       ADL.unsafeRead ms (coerce m) >>= \case
-        Unsolved mask     -> pure mask
-        Solved _ mask _ _ -> pure mask
+        Unsolved mask _ -> pure mask
+        Solved _ mask _ _ _ -> pure mask
 
     go :: Int -> Names -> Ix -> ShowS
     go p NNil{} i = (show m++)

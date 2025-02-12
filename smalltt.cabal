@@ -49,7 +49,6 @@ library
       Presyntax
       SymTable
       TopCxt
-      Unification
       UnificationTyped
   other-modules:
       Paths_smalltt

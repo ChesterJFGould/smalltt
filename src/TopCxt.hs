@@ -10,6 +10,9 @@ import qualified SymTable as ST
 import qualified MetaCxt as MC
 import Common
 import CoreTypes
+import Map as M
+
+type TypeCxt = M.Map Lvl GTy
 
 -- | Top-level elaboration context.
 data Cxt = Cxt {
@@ -17,7 +20,8 @@ data Cxt = Cxt {
   info   :: TopInfo,     -- ^ Span, term, type for each definition.
   tbl    :: ST.SymTable, -- ^ Symbol table.
   mcxt   :: MetaCxt,     -- ^ Metacontext.
-  frz    :: MetaVar      -- ^ All metavars smaller than frz are frozen.
+  frz    :: MetaVar,     -- ^ All metavars smaller than frz are frozen.
+  typ    :: TypeCxt      -- ^ Types of elaborated top level variables
   }
 
 type WithCxt a =
@@ -26,6 +30,7 @@ type WithCxt a =
   (?tbl  :: ST.SymTable) =>
   (?mcxt :: MetaCxt)     =>
   (?frz  :: MetaVar)     =>
+  (?typ  :: TypeCxt)     =>
   a
 
 -- | New top context from a source file and the number of top defs.
@@ -39,11 +44,12 @@ new src len act = do
       ?mcxt = ms
       ?lvl  = 0
       ?frz  = 0
+      ?typ  = M.empty (error "undefined top entry")
   act
 {-# inline new #-}
 
 cxt :: WithCxt Cxt
-cxt = Cxt ?lvl ?info ?tbl ?mcxt ?frz
+cxt = Cxt ?lvl ?info ?tbl ?mcxt ?frz ?typ
 {-# inline cxt #-}
 
 -- | Extend cxt with a top-level definition. Updates destructively. Freezes all
@@ -55,7 +61,9 @@ define x a ga t act = do
   ALM.write ?info (coerce ?lvl) (TopEntry x a t frz)
   ST.insert x (ST.Top a ga t (TopVar ?lvl (coerce vt))) ?tbl
   let lvl' = ?lvl + 1
+  let typ' = M.insert ?lvl ga ?typ
   let ?lvl = lvl'
       ?frz = frz
+      ?typ = typ'
   act
 {-# inline define #-}

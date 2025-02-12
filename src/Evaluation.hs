@@ -1,6 +1,6 @@
 module Evaluation (
   app, inlApp, appSp, eval, force, forceAll, forceMetas, appCl,
-  appCl', quote--, quote0, eval0, nf0
+  appCl', quote, quote0, eval0, nf0, zonk
   ) where
 
 import qualified LvlSet as LS
@@ -13,13 +13,13 @@ import CoreTypes
 localVar :: Env -> Ix -> Val
 localVar (EDef _ v) 0 = v
 localVar (EDef e _) x = localVar e (x - 1)
-localVar _          _ = impossible
+localVar _          x = error ("unbound variable: " ++ show x)
 
 meta :: MetaCxt -> MetaVar -> Val
 meta ms x = runIO do
   MC.read ms x >>= \case
-    Unsolved _     -> pure (VFlex x SId)
-    Solved _ _ _ v -> pure (VUnfold (UHSolved x) SId v)
+    Unsolved _ _ -> pure (VFlex x SId)
+    Solved _ _ _ v _ -> pure (VUnfold (UHSolved x) SId v)
 {-# inline meta #-}
 
 appCl' :: MetaCxt -> Closure -> Val -> Val
@@ -68,9 +68,9 @@ maskEnv e mask = (case go e mask of SpineLvl sp _ -> sp) where
 insertedMeta :: MetaCxt -> Env -> MetaVar -> Val
 insertedMeta ms ~e x = runIO do
   MC.read ms x >>= \case
-    Unsolved mask     ->
+    Unsolved mask _ ->
       pure (VFlex x (maskEnv e mask))
-    Solved _ mask t v ->
+    Solved _ mask t v _ ->
       let sp = maskEnv e mask
       in pure (VUnfold (UHSolved x) sp (appSp ms v sp))
 {-# inline insertedMeta #-}
@@ -105,8 +105,8 @@ force ms = \case
 force' :: MetaCxt -> MetaVar -> Spine -> Val -> IO Val
 force' ms x sp ~xsp =
   MC.read ms x >>= \case
-    Unsolved _     -> pure xsp
-    Solved _ _ _ v -> pure (VUnfold (UHSolved x) sp (appSp ms v sp))
+    Unsolved _ _ -> pure xsp
+    Solved _ _ _ v _ -> pure (VUnfold (UHSolved x) sp (appSp ms v sp))
 {-# noinline force' #-}
 
 -- | Eliminate all unfoldings from the head.
@@ -126,8 +126,8 @@ forceAll' ms = \case
 forceAllFlex :: MetaCxt -> MetaVar -> Spine -> Val -> IO Val
 forceAllFlex ms x sp ~xsp =
   MC.read ms x >>= \case
-    Unsolved _     -> pure xsp
-    Solved _ _ _ v -> forceAll' ms $! appSp ms v sp
+    Unsolved _ _   -> pure xsp
+    Solved _ _ _ v _ -> forceAll' ms $! appSp ms v sp
 {-# noinline forceAllFlex #-}
 
 -- | Eliminate all meta unfoldings from the head.
@@ -147,8 +147,8 @@ forceMetas' ms = \case
 forceMetasFlex :: MetaCxt -> MetaVar -> Spine -> Val -> IO Val
 forceMetasFlex ms x sp ~xsp =
   MC.read ms x >>= \case
-    Unsolved _     -> pure xsp
-    Solved _ _ _ v -> forceMetas' ms $! appSp ms v sp
+    Unsolved _ _ -> pure xsp
+    Solved _ _ _ v _ -> forceMetas' ms $! appSp ms v sp
 {-# noinline forceMetasFlex #-}
 
 --------------------------------------------------------------------------------
@@ -181,14 +181,48 @@ quote ms l opt t = let
 
 --------------------------------------------------------------------------------
 
--- eval0 :: MetaCxt -> Tm -> Val
--- eval0 ms = eval ms ENil
--- {-# inline eval0 #-}
--- 
--- quote0 :: MetaCxt -> QuoteOption -> Val -> Tm
--- quote0 ms = quote ms 0
--- {-# inline quote0 #-}
--- 
--- nf0 :: MetaCxt -> QuoteOption -> Tm -> Tm
--- nf0 ms opt t = quote0 ms opt (eval0 ms t)
--- {-# inline nf0 #-}
+eval0 :: MetaCxt -> Tm -> Val
+eval0 ms = eval ms ENil
+{-# inline eval0 #-}
+
+quote0 :: MetaCxt -> QuoteOption -> Val -> Tm
+quote0 ms = quote ms 0
+{-# inline quote0 #-}
+
+nf0 :: MetaCxt -> QuoteOption -> Tm -> Tm
+nf0 ms opt t = quote0 ms opt (eval0 ms t)
+{-# inline nf0 #-}
+
+
+zonkApps :: MetaCxt -> Env -> Lvl -> Tm -> (# Tm | Val #)
+zonkApps ms env l = \case
+  Meta x    -> let t = meta ms x in (# | t #)
+  App t u i -> case zonkApps ms env l t of
+                 (# t | #) -> let u' = zonk ms env l u in (# App t u' i | #)
+                 (# | t #) -> let t' = inlApp ms t (eval ms env u) i in (# | t' #)
+  t         -> let t' = zonk ms env l t in (# t' | #)
+
+-- | Unfold all solved metas in a term.
+zonk :: MetaCxt -> Env -> Lvl -> Tm -> Tm
+zonk ms env l t = let
+  go     = zonk ms env l; {-# inline go #-}
+  goBind = zonk ms (EDef env (VLocalVar l SId)) (l + 1); {-# inline goBind #-}
+  goApps = zonkApps ms env l; {-# inline goApps #-}
+  quote  = Evaluation.quote ms l UnfoldMetas; {-# inline quote #-}
+  in case t of
+    LocalVar x     -> LocalVar x
+    TopVar x v     -> TopVar x v
+    Let x a t u    -> Let x (go a) (go t) (goBind u)
+    App t u i      -> case goApps t of
+                        (# t | #) -> App t (go u) i
+                        (# | t #) -> quote $ inlApp ms t (eval ms env u) i
+    Lam xi t       -> Lam xi (goBind t)
+    InsertedMeta x -> runIO $ MC.read ms x >>= \case
+                        Unsolved _ _ ->
+                          pure (InsertedMeta x)
+                        Solved _ mask _ v _ ->
+                          pure $ quote $ appSp ms v (maskEnv env mask)
+    Meta x         -> quote $ meta ms x
+    Pi xi a b      -> Pi xi (go a) (goBind b)
+    Irrelevant     -> Irrelevant
+    U              -> U

@@ -8,6 +8,8 @@ import qualified Presyntax as P
 import qualified SymTable as ST
 import qualified TopCxt as Top
 import qualified UnificationTyped as Unif
+import qualified Map as M
+import qualified Evaluation as Ev
 
 import Common
 import CoreTypes
@@ -17,11 +19,11 @@ import InCxt
 
 --------------------------------------------------------------------------------
 
-unify :: Cxt -> P.Tm -> G -> G -> IO ()
+unify :: Dbg => Cxt -> P.Tm -> G -> G -> IO ()
 unify cxt pt l r = do
   debug ["unify", showValOpt cxt (g1 l) UnfoldMetas, showValOpt cxt (g1 r) UnfoldMetas]
   let ecxt = ErrorCxt (mcxt cxt) (tbl cxt) (names cxt) (lvl cxt); {-# inline ecxt #-}
-  Unif.unifyTy (mcxt cxt) (tbl cxt) (lvl cxt) (frz cxt) Rigid l r `catch` \case
+  Unif.unifyTy (Unif.elab2UnifCxt cxt) l r `catch` \case
      UnifyEx e -> throw $ UnifyExInCxt ecxt pt (g1 l) (g1 r) e
      _         -> impossible
 
@@ -32,33 +34,77 @@ unify cxt pt l r = do
 data Infer = Infer Tm {-# unpack #-} GTy
 
 -- | Create fresh meta both as a term and a value.
-freshMeta :: Cxt -> IO (Tm, Val)
-freshMeta cxt = do
+-- freshMeta :: Cxt -> GTy -> IO (Tm, Val)
+-- freshMeta cxt ty = do
+--   let goSp x l mask acc
+--         | x == l    = acc
+--         | otherwise =
+--           let acc' | LS.member x mask = SApp acc (VLocalVar x SId) Expl
+--                    | otherwise        = acc
+--           in goSp (x + 1) l mask acc'
+-- 
+--   mvar <- MC.fresh (mcxt cxt) ty (mask cxt)
+--   let mt = InsertedMeta (coerce mvar)
+--   let mv = VFlex (coerce mvar) (goSp 0 (lvl cxt) (mask cxt) SId)
+--   pure $! (mt // mv)
+-- {-# inline freshMeta #-}
+-- 
+-- -- | Create fresh meta as a term, under an extra binder.
+-- freshMetaUnderBinder :: Cxt -> Icit -> GTy -> IO Tm
+-- freshMetaUnderBinder cxt i ty = do
+--   mvar <- MC.fresh (mcxt cxt) ty (LS.insert (lvl cxt) (mask cxt))
+--   pure $! (InsertedMeta (coerce mvar))
 
-  let goSp x l mask acc
-        | x == l    = acc
+calcMetaType :: Cxt -> VTy -> IO VTy
+calcMetaType cxt codom =
+  let goSp :: Lvl -> Lvl -> LS.LvlSet -> (Tm -> Tm) -> IO (Tm -> Tm)
+      goSp x l mask ty
+        | x == l    = return ty
         | otherwise =
-          let acc' | LS.member x mask = SApp acc (VLocalVar x SId) Expl
-                   | otherwise        = acc
-          in goSp (x + 1) l mask acc'
+          let ty'
+                | LS.member x mask =
+                  let (G _ xTy) = M.lookup x (typ cxt)
+                  in (\c -> ty (Pi (NI NEmpty Expl) (Ev.quote (mcxt cxt) x UnfoldNone xTy) c))
+                | otherwise        = ty
+          in goSp (x + 1) l mask ty'
+  in do
+    f <- goSp 0 (lvl cxt) (mask cxt) (\c -> c)
+    let ty = (Ev.eval (mcxt cxt) ENil (f (Ev.quote (mcxt cxt) (lvl cxt) UnfoldNone codom)))
+    debug ["calcMetaType", show ty]
+    return ty
 
-  mvar <- MC.fresh (mcxt cxt) (mask cxt)
+-- | Create fresh meta as a value.
+freshMeta :: Cxt -> VTy -> IO (Tm, Val)
+freshMeta cxt ty = do
+  let goSp :: Lvl -> Lvl -> LS.LvlSet -> Spine -> IO Spine
+      goSp x l mask sp
+        | x == l    = return sp
+        | otherwise =
+          let sp'
+                | LS.member x mask = SApp sp (VLocalVar x SId) Expl
+                | otherwise        = sp
+          in goSp (x + 1) l mask sp'
+  sp <- (goSp 0 (lvl cxt) (mask cxt) SId)
+  ty' <- calcMetaType cxt ty
+  mvar <- MC.fresh (mcxt cxt) (gjoin ty') (mask cxt)
   let mt = InsertedMeta (coerce mvar)
-  let mv = VFlex (coerce mvar) (goSp 0 (lvl cxt) (mask cxt) SId)
-  pure $! (mt // mv)
-{-# inline freshMeta #-}
+  pure $! (mt, VFlex (coerce mvar) sp)
 
 -- | Create fresh meta as a term, under an extra binder.
-freshMetaUnderBinder :: Cxt -> Icit -> IO Tm
-freshMetaUnderBinder cxt i = do
-  mvar <- MC.fresh (mcxt cxt) (LS.insert (lvl cxt) (mask cxt))
-  pure $! (InsertedMeta (coerce mvar))
+freshMetaUnderBinder :: Cxt -> Icit -> VTy -> IO Tm
+freshMetaUnderBinder cxt i ty = do
+  ty' <- calcMetaType cxt ty
+  mvar <- MC.fresh (mcxt cxt) (gjoin ty') (LS.insert (lvl cxt) (mask cxt))
+  pure $! InsertedMeta (coerce mvar)
+
+
+
 {-# inline freshMetaUnderBinder #-}
 
 goInsert' :: Cxt -> Infer -> IO Infer
 goInsert' cxt (Infer t (G a fa)) = forceAll cxt fa >>= \case
   VPi (NI x Impl) a b -> do
-    (m, mv) <- freshMeta cxt
+    (m, mv) <- freshMeta cxt a
     let b' = appCl' cxt b mv
     goInsert' cxt (Infer (App t m Impl) (gjoin b'))
   fa -> pure (Infer t (G a fa))
@@ -85,7 +131,7 @@ insertAppsUntilName topT cxt name act = go cxt =<< act where
       if eqName cxt x (NSpan name) then
         pure (Infer t (G topa fa))
       else do
-        (m, mv) <- freshMeta cxt
+        (m, mv) <- freshMeta cxt a
         let b' = appCl' cxt b mv
         go cxt (Infer (App t m Impl) (gjoin b'))
     _ ->
@@ -146,8 +192,8 @@ infer cxt topT = do
         VPi (NI x i') a b | i == i'   -> pure (a, b)
                           | otherwise -> impossible
         ftty -> do
-          a <- snd <$> freshMeta cxt
-          b <- Closure (env cxt) <$> freshMetaUnderBinder cxt i
+          a <- snd <$> freshMeta cxt VU
+          b <- Closure (env cxt) <$> freshMetaUnderBinder cxt i VU
           let expected = VPi (NI NX i) a b
           unify cxt topT (G tty ftty) (gjoin expected)
           pure (a, b)
@@ -168,7 +214,7 @@ infer cxt topT = do
 
     P.Lam _ x (P.NoName i) ma t -> do
       (a, va) <- case ma of
-        UNothing -> freshMeta cxt
+        UNothing -> freshMeta cxt VU
         UJust a  -> do a <- checkType cxt a
                        pure (a, eval cxt a)
 
@@ -180,8 +226,8 @@ infer cxt topT = do
       pure $! (Infer U (gjoin VU))
 
     P.Hole _ -> do
-      (_, va) <- freshMeta cxt
-      (t, _ ) <- freshMeta cxt
+      (t, tv) <- freshMeta cxt VU
+      (_, va) <- freshMeta cxt VU
       pure $! (Infer t (gjoin va))
 
   debug ["inferred", showTm cxt t, showValOpt cxt (g1 a) UnfoldNone]
@@ -239,7 +285,7 @@ check cxt topT (G topA ftopA) = do
           Let x a t <$> check cxt u (G topA ftopA)
 
     (P.Hole _, _) ->
-      fst <$> freshMeta cxt
+      fst <$> freshMeta cxt ftopA
 
     (topT, ftopA) -> do
       Infer t inferred <- insertApps cxt $ infer cxt topT

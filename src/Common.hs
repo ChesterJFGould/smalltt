@@ -61,7 +61,7 @@ maxLocals = 64; {-# inline maxLocals #-}
 type Dbg = HasCallStack
 
 debug :: [String] -> IO ()
-debug strs = putStrLn (intercalate " | " strs ++ " END")
+debug strs = putStrLn (intercalate " | " strs ++ " END\n")
 
 debugging :: IO () -> IO ()
 debugging act = act
