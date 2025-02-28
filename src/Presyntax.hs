@@ -104,6 +104,9 @@ data Tm
   | Pi Pos Bind Icit Tm Tm
   | Lam Pos Bind ArgInfo (UMaybe Tm) Tm
   | App Tm Tm ArgInfo
+  | Sigma Pos Bind Tm Tm
+  | Fst Tm
+  | Snd Tm
   | U Pos
   | Hole Pos
   deriving Show
@@ -123,6 +126,9 @@ span t = Span (left t) (right t) where
     Pi l x i a b   -> l
     Lam l x i ma t -> l
     App t u i      -> left t
+    Sigma l x a b  -> l
+    Fst e          -> left e
+    Snd e          -> left e
     U p            -> p
     Hole p         -> p
 
@@ -132,5 +138,8 @@ span t = Span (left t) (right t) where
     Pi l x i a b   -> right b
     Lam l x i ma t -> right t
     App t u i      -> right u
+    Sigma l x a b  -> l
+    Fst e          -> right e
+    Snd e          -> right e
     U (Pos p)      -> Pos (p - 1)
     Hole p         -> p
