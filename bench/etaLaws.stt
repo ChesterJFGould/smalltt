@@ -1,0 +1,11 @@
+Eq : (A : U) -> A -> A -> U
+ = \A a b. (P : A -> U) -> P a -> P b
+
+Refl : {A a} -> Eq A a a
+ = \P pa. pa
+
+sigmaEta : (A : U) -> (B : A -> U) -> (p : Sigma x : A. B x) -> Eq (Sigma x : A. B x) p (SigmaI (fst p) (snd p))
+ = \A B p. Refl
+
+unitEta : (u : Unit) -> Eq Unit u unit
+ = \u. Refl

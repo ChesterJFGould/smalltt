@@ -1,0 +1,20 @@
+Eq : (A : U) -> A -> A -> U
+ = λ A a b. (P : A -> U) -> P a -> P b
+
+Refl : {A a} -> Eq A a a
+ = λ P pa. pa
+
+leibniz : {A a b} -> Eq A a b -> (P : A -> U) -> P a -> P b
+ = λ eq. eq
+
+The : (A : U) -> A -> U
+ = λ A a. Sigma b : A. Eq A b a
+
+in : {A} -> (a : A) -> The A a
+ = λ a. SigmaI a Refl
+
+out : {A a} -> The A a -> A
+ = λ e. fst e
+
+outEq : {A a} -> (e : The A e) -> Eq A (out e) a
+ = λ e. snd e

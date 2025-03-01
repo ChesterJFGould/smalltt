@@ -31,6 +31,12 @@ isKeyword span = inSpan span do
      "let"  -> pure ()
      "λ"    -> pure ()
      "U"    -> pure ()
+     "Sigma" -> pure ()
+     "SigmaI" -> pure ()
+     "car" -> pure ()
+     "cdr" -> pure ()
+     "Unit" -> pure ()
+     "unit" -> pure ()
      |])
   eof
 
@@ -70,6 +76,12 @@ atomBase = do
     "let"  -> skipToVar l \_ -> empty
     "λ"    -> skipToVar l \_ -> empty
     "U"    -> skipToVar l \_ -> pure $ U l
+    "Sigma" -> skipToVar l \_ -> empty
+    "SigmaI" -> skipToVar l \_ -> empty
+    "car" -> skipToVar l \_ -> empty
+    "cdr" -> skipToVar l \_ -> empty
+    "Unit" -> skipToVar l \_ -> pure (UnitT l)
+    "unit" -> skipToVar l \_ -> pure (Unit l)
     _      -> do {identStartChar; manyIdentChars; r <- getPos; ws; pure (Var (Span l r))}
             |])
 
@@ -81,7 +93,6 @@ atom' = lvl' >> atomBase `cut` [Msg "atomic expression"]
 
 -- application
 --------------------------------------------------------------------------------
-
 skipToApp :: Pos -> (Pos -> Parser Tm) -> Parser Tm
 skipToApp l p = branch identChar
   (do {manyIdentChars; r <- getPos; ws; goApp (Var (Span l r))})
@@ -105,7 +116,6 @@ goApp t = branch braceL
 
 app' :: Parser Tm
 app' = goApp =<< atom'
-
 
 -- Pi
 --------------------------------------------------------------------------------
@@ -198,8 +208,23 @@ pi' = do
 -- Sigma
 --------------------------------------------------------------------------------
 
-sigma :: Parser Tm
+sigma :: Pos -> Parser Tm
+sigma pos = idented' \x -> do
+  $(symbol ":")
+  ws
+  a <- tm'
+  ws
+  $(symbol ".")
+  ws
+  b <- tm'
+  return (Sigma pos (BSpan x) a b)
 
+sigmaI :: Parser Tm
+sigmaI = do
+  a <- atom'
+  ws
+  b <- atom'
+  return (SigmaI a b)
 
 -- Lambda
 --------------------------------------------------------------------------------
@@ -264,8 +289,14 @@ tm' = (do
     "λ"    -> skipToApp l \_ -> lam' l
     "\\"   -> ws >> lam' l
     "let"  -> skipToApp l \_ -> pLet' l
+    "Sigma" -> ws >> sigma l
+    "SigmaI" -> ws >> sigmaI
+    "car" -> ws >> Fst <$> atom'
+    "cdr" -> ws >> Snd <$> atom'
+    "Unit" -> pure (UnitT l)
+    "unit" -> pure (Unit l)
     _      -> ws >> pi' |]))
-  `cut` [Msg "lambda expression", "let-definition"]
+  `cut` [Msg "lambda expression", "let-definition", "Sigma type", "Sigma introduction", "Sigma elimination"]
 
 --------------------------------------------------------------------------------
 

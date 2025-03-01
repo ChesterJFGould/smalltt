@@ -6,6 +6,8 @@ import qualified Data.Array.LM as ALM
 import qualified Data.ByteString as B
 import qualified Control.Exception as Ex
 import System.IO
+import System.Environment
+import System.Exit
 import Control.Monad
 
 import qualified MetaCxt as MC
@@ -26,11 +28,23 @@ import Parser
 --------------------------------------------------------------------------------
 
 main :: IO ()
+main = do
+  args <- getArgs
+  case args of
+    [path] -> load path >> pure ()
+    _ -> usage >> exitWith (ExitFailure 1)
+
+usage :: IO ()
+usage = do
+  prog <- getProgName
+  putStrLn ("usage: " ++ prog ++ " " ++ "<stt file>")
+{-
 main = standardize do
   hSetBuffering stdout NoBuffering
   putStrLn "smalltt 0.2.0.2"
   putStrLn "enter :? for help"
   loop Nothing
+-}
 
 data State = State {
     path   :: FilePath

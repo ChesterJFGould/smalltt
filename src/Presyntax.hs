@@ -105,8 +105,11 @@ data Tm
   | Lam Pos Bind ArgInfo (UMaybe Tm) Tm
   | App Tm Tm ArgInfo
   | Sigma Pos Bind Tm Tm
+  | SigmaI Tm Tm
   | Fst Tm
   | Snd Tm
+  | UnitT Pos
+  | Unit Pos
   | U Pos
   | Hole Pos
   deriving Show
@@ -127,6 +130,7 @@ span t = Span (left t) (right t) where
     Lam l x i ma t -> l
     App t u i      -> left t
     Sigma l x a b  -> l
+    SigmaI a b     -> left a
     Fst e          -> left e
     Snd e          -> left e
     U p            -> p
@@ -139,6 +143,7 @@ span t = Span (left t) (right t) where
     Lam l x i ma t -> right t
     App t u i      -> right u
     Sigma l x a b  -> l
+    SigmaI a b     -> right b
     Fst e          -> right e
     Snd e          -> right e
     U (Pos p)      -> Pos (p - 1)
