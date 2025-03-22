@@ -80,8 +80,8 @@ atomBase = do
     "SigmaI" -> skipToVar l \_ -> empty
     "car" -> skipToVar l \_ -> empty
     "cdr" -> skipToVar l \_ -> empty
-    "Unit" -> skipToVar l \_ -> pure (UnitT l)
-    "unit" -> skipToVar l \_ -> pure (Unit l)
+    "Unit" -> skipToVar l \_ -> pure (Unit l)
+    "unit" -> skipToVar l \_ -> pure (UnitI l)
     _      -> do {identStartChar; manyIdentChars; r <- getPos; ws; pure (Var (Span l r))}
             |])
 
@@ -293,8 +293,8 @@ tm' = (do
     "SigmaI" -> ws >> sigmaI
     "car" -> ws >> Fst <$> atom'
     "cdr" -> ws >> Snd <$> atom'
-    "Unit" -> pure (UnitT l)
-    "unit" -> pure (Unit l)
+    "Unit" -> pure (Unit l)
+    "unit" -> pure (UnitI l)
     _      -> ws >> pi' |]))
   `cut` [Msg "lambda expression", "let-definition", "Sigma type", "Sigma introduction", "Sigma elimination"]
 

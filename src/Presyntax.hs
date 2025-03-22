@@ -108,8 +108,8 @@ data Tm
   | SigmaI Tm Tm
   | Fst Tm
   | Snd Tm
-  | UnitT Pos
   | Unit Pos
+  | UnitI Pos
   | U Pos
   | Hole Pos
   deriving Show

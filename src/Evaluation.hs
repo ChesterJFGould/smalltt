@@ -75,6 +75,20 @@ insertedMeta ms ~e x = runIO do
       in pure (VUnfold (UHSolved x) sp (appSp ms v sp))
 {-# inline insertedMeta #-}
 
+doFst :: Val -> Val
+doFst (VSigmaI a _) = a
+doFst (VLocalVar x sp) = VLocalVar x (SFst sp)
+doFst (VUnfold h sp v) = VUnfold h (SFst sp) (doFst v)
+doFst (VFlex x sp) = VFlex x (SFst sp)
+doFst _ = impossible
+
+doSnd :: Val -> Val
+doSnd (VSigmaI _ b) = b
+doSnd (VLocalVar x sp) = VLocalVar x (SSnd sp)
+doSnd (VUnfold h sp v) = VUnfold h (SSnd sp) (doSnd v)
+doSnd (VFlex x sp) = VFlex x (SSnd sp)
+doSnd _ = impossible
+
 eval' :: MetaCxt -> Env -> Tm -> Val
 eval' ms ~e = \case
   LocalVar x     -> localVar e x
@@ -85,6 +99,12 @@ eval' ms ~e = \case
   InsertedMeta x -> insertedMeta ms e x
   Lam xi t       -> VLam xi (Closure e t)
   Pi xi a b      -> VPi xi (eval' ms e a) (Closure e b)
+  Sigma a b      -> VSigma (eval' ms e a) (Closure e b)
+  SigmaI a b     -> VSigmaI (eval' ms e a) (eval' ms e b)
+  Fst a          -> doFst (eval' ms e a)
+  Snd a          -> doSnd (eval' ms e a)
+  Unit           -> VUnit
+  UnitI           -> VUnitI
   Irrelevant     -> VIrrelevant
   U              -> VU
 
