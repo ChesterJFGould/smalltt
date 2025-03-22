@@ -177,6 +177,8 @@ quoteSp :: MetaCxt -> Lvl -> QuoteOption -> Tm -> Spine -> Tm
 quoteSp ms l opt hd = \case
   SId         -> hd
   SApp sp t i -> App (quoteSp ms l opt hd sp) (quote ms l opt t) i
+  SFst sp     -> Fst (quoteSp ms l opt hd sp)
+  SSnd sp     -> Snd (quoteSp ms l opt hd sp)
 
 quote :: MetaCxt -> Lvl -> QuoteOption -> Val -> Tm
 quote ms l opt t = let
@@ -191,6 +193,10 @@ quote ms l opt t = let
     VLocalVar x sp              -> goSp (LocalVar (lvlToIx l x)) sp
     VLam xi t                   -> Lam xi (goBind t)
     VPi xi a b                  -> Pi xi (go a) (goBind b)
+    VSigma a b                  -> Sigma (go a) (goBind b)
+    VSigmaI a b                 -> SigmaI (go a) (go b)
+    VUnit                       -> Unit
+    VUnitI                      -> UnitI
     VU                          -> U
     VIrrelevant                 -> Irrelevant
 
