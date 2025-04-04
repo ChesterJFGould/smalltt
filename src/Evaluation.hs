@@ -99,7 +99,7 @@ eval' ms ~e = \case
   InsertedMeta x -> insertedMeta ms e x
   Lam xi t       -> VLam xi (Closure e t)
   Pi xi a b      -> VPi xi (eval' ms e a) (Closure e b)
-  Sigma a b      -> VSigma (eval' ms e a) (Closure e b)
+  Sigma xi a b   -> VSigma xi (eval' ms e a) (Closure e b)
   SigmaI a b     -> VSigmaI (eval' ms e a) (eval' ms e b)
   Fst a          -> doFst (eval' ms e a)
   Snd a          -> doSnd (eval' ms e a)
@@ -193,7 +193,7 @@ quote ms l opt t = let
     VLocalVar x sp              -> goSp (LocalVar (lvlToIx l x)) sp
     VLam xi t                   -> Lam xi (goBind t)
     VPi xi a b                  -> Pi xi (go a) (goBind b)
-    VSigma a b                  -> Sigma (go a) (goBind b)
+    VSigma xi a b                  -> Sigma xi (go a) (goBind b)
     VSigmaI a b                 -> SigmaI (go a) (go b)
     VUnit                       -> Unit
     VUnitI                      -> UnitI

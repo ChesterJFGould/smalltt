@@ -222,6 +222,13 @@ infer cxt topT = do
       let ty = VPi (NI (P.bind x) i) va (valToClosure cxt (g1 vb))
       pure $! Infer (Lam (NI (P.bind x) i) t) (gjoin ty)
 
+    P.Sigma _ x a b -> do
+      a <- checkType cxt a
+      let ~va = eval cxt a
+      binding cxt x Expl (gjoin va) \cxt _ -> do
+        b <- checkType cxt b
+        pure $! (Infer (Sigma (NI (P.bind x) Expl) a b) (gjoin VU))
+
     P.U _ ->
       pure $! (Infer U (gjoin VU))
 
@@ -261,23 +268,30 @@ check cxt topT (G topA ftopA) = do
     (P.Lam _ x inf ma t, VPi (NI x' i) a b)
       | (case inf of P.NoName i' -> i == i'
                      P.Named n   -> eqName cxt x' (NSpan n) && i == Impl) -> do
-
-      -- We prefer the user-provided annotation for the unforced binder type
-      a <- case ma of
-        UNothing -> pure a
-        UJust a' -> do
-          a' <- checkType cxt a'
-          let va' = eval cxt a'
-          unify cxt topT (gjoin va') (gjoin a)
-          pure va'
-
-      binding cxt x i (gjoin a) \cxt v -> do
-        Lam (NI (P.bind x) i) <$> (check cxt t $! (gjoin $! appCl' cxt b v))
+          -- We prefer the user-provided annotation for the unforced binder type
+          a <-
+            case ma of
+              UNothing -> pure a
+              (UJust a') ->
+                do
+                  a' <- checkType cxt a'
+                  let va' = eval cxt a'
+                  unify cxt topT (gjoin va') (gjoin a)
+                  pure va'
+          binding cxt x i (gjoin a) \cxt v -> do
+            Lam (NI (P.bind x) i) <$> (check cxt t $! (gjoin $! appCl' cxt b v))
 
     (t, VPi (NI x Impl) a b) ->
       inserting cxt x (gjoin a) \cxt v -> do
         t <- check cxt t $! (gjoin $! appCl' cxt b v)
         pure (Lam (NI x Impl) t)
+
+    (P.SigmaI a b, VSigma (NI x i) at bt) ->
+      a <- check cxt a (gjoin at)
+      let ~av = eval cxt a
+      btv <- appCl cxt bt av
+      b <- check cxt b (gjoin btv)
+      pure (SigmaI a b)
 
     (P.Let _ x ma t u, ftopA) ->
       checkWithAnnot cxt ma t \ ~t ~a va ->

@@ -44,7 +44,7 @@ data Val
   | VUnfold UnfoldHead Spine ~Val
   | VLam NameIcit Closure
   | VPi NameIcit VTy Closure
-  | VSigma VTy Closure
+  | VSigma NameIcit VTy Closure
   | VSigmaI Val Val
   | VUnit
   | VUnitI
@@ -68,7 +68,7 @@ data Tm
   | InsertedMeta MetaVar
   | Meta MetaVar
   | Pi NameIcit Ty Ty
-  | Sigma Ty Ty
+  | Sigma NameIcit Ty Ty
   | SigmaI Tm Tm
   | Fst Tm
   | Snd Tm
