@@ -229,6 +229,31 @@ infer cxt topT = do
         b <- checkType cxt b
         pure $! (Infer (Sigma (NI (P.bind x) Expl) a b) (gjoin VU))
 
+    P.Fst e -> do
+      Infer e' (G et _) <- insertApps' cxt (infer cxt e)
+      (a, _) <- forceAll cxt et >>= \case
+        VSigma (NI _ i) a b -> pure (a, b)
+        fet -> do
+          a <- snd <$> freshMeta cxt VU
+          b <- Closure (env cxt) <$> freshMetaUnderBinder cxt Expl VU
+          let expected = VSigma (NI NX Expl) a b
+          unify cxt topT (G et fet) (gjoin expected)
+          pure (a, b)
+      pure (Infer (Fst e') (gjoin a))
+
+    P.Snd e -> do
+      Infer e' (G et _) <- insertApps' cxt (infer cxt e)
+      (a, b) <- forceAll cxt et >>= \case
+        VSigma (NI _ i) a b -> pure (a, b)
+        fet -> do
+          a <- snd <$> freshMeta cxt VU
+          b <- Closure (env cxt) <$> freshMetaUnderBinder cxt Expl VU
+          let expected = VSigma (NI NX Expl) a b
+          unify cxt topT (G et fet) (gjoin expected)
+          pure (a, b)
+      let b' = appCl cxt b (Ev.doFst (eval cxt e'))
+      pure (Infer (Snd e') (gjoin b'))
+
     P.U _ ->
       pure $! (Infer U (gjoin VU))
 
@@ -236,6 +261,8 @@ infer cxt topT = do
       (t, tv) <- freshMeta cxt VU
       (_, va) <- freshMeta cxt VU
       pure $! (Infer t (gjoin va))
+
+    t -> throw (CannotInfer t)
 
   debug ["inferred", showTm cxt t, showValOpt cxt (g1 a) UnfoldNone]
   pure (Infer t a)
@@ -280,18 +307,19 @@ check cxt topT (G topA ftopA) = do
                   pure va'
           binding cxt x i (gjoin a) \cxt v -> do
             Lam (NI (P.bind x) i) <$> (check cxt t $! (gjoin $! appCl' cxt b v))
-
     (t, VPi (NI x Impl) a b) ->
       inserting cxt x (gjoin a) \cxt v -> do
         t <- check cxt t $! (gjoin $! appCl' cxt b v)
         pure (Lam (NI x Impl) t)
 
-    (P.SigmaI a b, VSigma (NI x i) at bt) ->
+    (P.SigmaI a b, VSigma (NI x i) at bt) -> do
       a <- check cxt a (gjoin at)
       let ~av = eval cxt a
-      btv <- appCl cxt bt av
+      let btv = appCl cxt bt av
       b <- check cxt b (gjoin btv)
       pure (SigmaI a b)
+
+    (P.UnitI _, VUnit) -> pure UnitI
 
     (P.Let _ x ma t u, ftopA) ->
       checkWithAnnot cxt ma t \ ~t ~a va ->
@@ -305,7 +333,6 @@ check cxt topT (G topA ftopA) = do
       Infer t inferred <- insertApps cxt $ infer cxt topT
       unify cxt topT inferred (G topA ftopA)
       pure t
-
 
 -- Top level elaboration
 --------------------------------------------------------------------------------

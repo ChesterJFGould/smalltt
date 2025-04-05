@@ -14,7 +14,7 @@ in : {A} -> (a : A) -> The A a
  = λ a. SigmaI a Refl
 
 out : {A a} -> The A a -> A
- = λ e. fst e
+ = λ e. car e
 
-outEq : {A a} -> (e : The A e) -> Eq A (out e) a
- = λ e. snd e
+outEq : {A a} -> (e : The A a) -> Eq A (out e) a
+ = λ e. cdr e

@@ -39,6 +39,7 @@ data Exception
   | NotInScope {-# unpack #-} Span                -- offending name
   -- ^ Trying to infer type for named implicit lambda.
   | InferNamedLam
+  | CannotInfer P.Tm
   deriving Show
 
 --------------------------------------------------------------------------------
@@ -116,4 +117,5 @@ showException src = \case
     "Name not in scope: " ++ "\"" ++ showSpan src x ++ "\""
   InferNamedLam ->
     "Cannot infer type for lambda with named argument"
+  CannotInfer t -> "Cannot infer type for `" ++ show t ++ "`"
 {-# noinline showException #-}

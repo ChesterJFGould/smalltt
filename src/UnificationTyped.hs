@@ -105,6 +105,12 @@ approxOccurs ms frz occ t = let
     InsertedMeta x -> approxOccursInSolution ms frz occ x
     Meta x         -> approxOccursInSolution ms frz occ x
     Pi _ a b       -> (&&#) <$> go a <*> go b
+    Sigma _ a b    -> (&&#) <$> go a <*> go b
+    SigmaI a b     -> (&&#) <$> go a <*> go b
+    Fst a          -> go a
+    Snd a          -> go a
+    Unit           -> pure UTrue
+    UnitI          -> pure UTrue
     Irrelevant     -> pure UTrue
     U              -> pure UTrue
 
@@ -114,6 +120,8 @@ rigidQuoteSp ms frz pren hd = \case
   SApp sp t i -> App <$> rigidQuoteSp ms frz pren hd sp
                      <*> rigidQuote ms frz pren t
                      <*> pure i
+  SFst sp -> Fst <$> rigidQuoteSp ms frz pren hd sp
+  SSnd sp -> Snd <$> rigidQuoteSp ms frz pren hd sp
 
 rigidQuote :: MetaCxt -> MetaVar -> PartialRenaming -> Val -> IO Tm
 rigidQuote ms frz pren t = let
@@ -152,6 +160,10 @@ rigidQuote ms frz pren t = let
 
     VLam xi t   -> Lam xi <$> goBind t
     VPi xi a b  -> Pi xi <$> go a <*> goBind b
+    VSigma xi a b -> Sigma xi <$> go a <*> goBind b
+    VSigmaI a b -> SigmaI <$> go a <*> go b
+    VUnit -> pure Unit
+    VUnitI -> pure UnitI
     VU          -> pure U
     VIrrelevant -> pure Irrelevant
 
@@ -162,6 +174,12 @@ flexQuoteSp ms frz pren hd@(t, !tValid) = \case
     (sp, spValid) <- flexQuoteSp ms frz pren hd sp
     (t, tValid)   <- flexQuote   ms frz pren t
     pure $! (App sp t i // spValid &&# tValid)
+  SFst sp -> do
+    (sp, spValid) <- flexQuoteSp ms frz pren hd sp
+    pure (Fst sp // spValid)
+  SSnd sp -> do
+    (sp, spValid) <- flexQuoteSp ms frz pren hd sp
+    pure (Snd sp // spValid)
 
 flexQuote :: MetaCxt -> MetaVar -> PartialRenaming -> Val -> IO (Tm, UBool)
 flexQuote ms frz pren t = let
@@ -206,6 +224,20 @@ flexQuote ms frz pren t = let
       (b, bValid) <- goBind b
       pure $! (Pi xi a b // aValid &&# bValid)
 
+    VSigma xi a b -> do
+      (a, aValid) <- go a
+      (b, bValid) <- goBind b
+      pure $! (Sigma xi a b // aValid &&# bValid)
+
+    VSigmaI a b -> do
+      (a, aValid) <- go a
+      (b, bValid) <- go b
+      pure $! (SigmaI a b // aValid &&# bValid)
+
+    VUnit -> pure (Unit // UTrue)
+
+    VUnitI -> pure (UnitI // UTrue)
+
     VU          -> pure (U // UTrue)
     VIrrelevant -> pure (Irrelevant // UTrue)
 
@@ -213,6 +245,8 @@ fullCheckSp :: MetaCxt -> MetaVar -> PartialRenaming -> Spine -> IO ()
 fullCheckSp ms frz pren = \case
   SId         -> pure ()
   SApp sp t i -> fullCheckSp ms frz pren sp >> fullCheckRhs ms frz pren t
+  SFst sp -> fullCheckSp ms frz pren sp
+  SSnd sp -> fullCheckSp ms frz pren sp
 
 fullCheckRhs :: Dbg => MetaCxt -> MetaVar -> PartialRenaming -> Val -> IO ()
 fullCheckRhs ms frz pren v = do
@@ -237,6 +271,10 @@ fullCheckRhs ms frz pren v = do
 
     VLam _ t    -> goBind t
     VPi _ a b   -> go a >> goBind b
+    VSigma _ a b -> go a >> goBind b
+    VSigmaI a b -> go a >> go b
+    VUnit -> pure ()
+    VUnitI -> pure ()
     VUnfold{}   -> error "unfold in Full conversion state"
     VU          -> pure ()
     VIrrelevant -> pure ()
@@ -273,13 +311,18 @@ invertSp cxt m sp trim = do
                 y -> throw $ UnifyEx Conversion
             _ ->
               throw $ UnifyEx Conversion -- non-var in spine
+        SFst sp -> go ms ren trim sp
+        SSnd sp -> go ms ren trim sp
 
   dom <- go (mcxt cxt) ren trim sp
   pure (PRen m dom (lvl cxt) ren)
 
-lams :: Spine -> Tm -> Tm
-lams SId           acc = acc
+lams :: Spine -> Tm -> IO Tm
+lams SId           acc = pure acc
 lams (SApp sp t i) acc = lams sp (Lam (NI NX i) acc)
+-- Don't want to solve problems of the form (car X) = e or (cdr X) = e
+lams (SFst _) _ = throw (UnifyEx Conversion)
+lams (SSnd _) _ = throw (UnifyEx Conversion)
 
 data SSLS = SSLS Spine Spine LS.LvlSet
 
@@ -319,7 +362,7 @@ solve cxt x ~sp ~rhs = do
   --   let trim = mempty
 
     pren <- invertSp cxt x sp trim
-    rhs <- lams sp <$> rigidQuote (mcxt cxt) (frz cxt) pren rhs
+    rhs <- lams sp =<< rigidQuote (mcxt cxt) (frz cxt) pren rhs
     debug ["renamed", show rhs]
     debug ["solve", show x, show pren, show rhs]
     MC.solve (mcxt cxt) x rhs (eval (mcxt cxt) ENil rhs)
@@ -335,7 +378,7 @@ solveLong cxt x sp rhs ty = do
     ((VFlex x' sp'), _)
       | x == x' -> do
         xTy <- metaType cxt x
-        unifySp cxt xTy sp sp'
+        unifySp cxt (VFlex x') xTy sp sp'
         return ()
       | otherwise -> flexFlex cxt (VFlex x sp) x sp rhs x' sp'
     (_, _) -> solve cxt x sp rhs
@@ -394,17 +437,37 @@ assertPiType cxt icit t = do
   unifyTy cxt (gjoin t) (gjoin (VPi (NI NX icit) d c))
   return (d, c)
 
-unifySp :: UnifCxt -> GTy -> Spine -> Spine -> IO GTy
-unifySp cxt idTy sp sp' = do
+assertSigmaType :: UnifCxt -> VTy -> IO (VTy, Closure)
+assertSigmaType _ (VSigma _ d c) = return (d, c)
+assertSigmaType cxt t = do
+  debug ["assertSigmaType", show t]
+  d <- freshMeta cxt VU
+  c <- freshMetaUnderBinder cxt Expl VU
+  -- TODO: Is it ok that we just set name to empty?
+  unifyTy cxt (gjoin t) (gjoin (VSigma (NI NX Expl) d c))
+  return (d, c)
+
+unifySp :: UnifCxt -> (Spine -> Val) -> GTy -> Spine -> Spine -> IO GTy
+unifySp cxt mkVal idTy sp sp' = do
   debug ["unifySp", show idTy, show sp, show sp']
   case (sp, sp') of
     (SId,         SId          ) -> pure idTy
     (SApp sp t i, SApp sp' t' _) -> do
-      (G _ ftyp) <- unifySp cxt idTy sp sp'
+      (G _ ftyp) <- unifySp cxt mkVal idTy sp sp'
       typ' <- forceCS cxt ftyp
       (d, c) <- assertPiType cxt i typ'
       unifyChk cxt (gjoin t) (gjoin t') d
       return (gjoin (appCl' (mcxt cxt) c t))
+    (SFst sp, SFst sp') -> do
+      (G _ ftyp) <- unifySp cxt mkVal idTy sp sp'
+      typ' <- forceCS cxt ftyp
+      (a, _) <- assertSigmaType cxt typ'
+      pure (gjoin a)
+    (SSnd sp, SSnd sp') -> do
+      (G _ ftyp) <- unifySp cxt mkVal idTy sp sp'
+      typ' <- forceCS cxt ftyp
+      (_, b) <- assertSigmaType cxt typ'
+      pure (gjoin (appCl' (mcxt cxt) b (doFst (mkVal sp))))
     _ -> throw $ UnifyEx Conversion
 
 unifyTy :: UnifCxt -> G -> G -> IO ()
@@ -457,7 +520,18 @@ unifyChk cxt (G topt ftopt) (G topt' ftopt') ty = let
         unifyChk cxt' (gjoin (doApp cxt t xv)) (gjoin (doApp cxt t' xv)) (appCl' (mcxt cxt) c xv)
       -- (VLam i c, t', ty) -> do
       --   unifyTy ms tcxt ttcxt l frz cs ty _
+      -- dependent pair eta
+      (_, _, VSigma _ a b) -> do
+        let fstt = doFst t
+        unifyChk cxt (gjoin fstt) (gjoin (doFst t')) a
+        unifyChk cxt (gjoin (doSnd t)) (gjoin (doSnd t')) (appCl' (mcxt cxt) b fstt)
+      -- unit eta
+      (_, _, VUnit) -> pure ()
       (VPi (NI _ i) d c, VPi (NI _ i') d' c', VU) | i == i' -> do
+        let gd = gjoin d
+        unifyChk cxt gd (gjoin d') VU
+        unifyChkClo cxt gd c c' VU
+      (VSigma (NI _ i) d c, VSigma (NI _ i') d' c', VU) | i == i' -> do
         let gd = gjoin d
         unifyChk cxt gd (gjoin d') VU
         unifyChkClo cxt gd c c' VU
@@ -466,16 +540,16 @@ unifyChk cxt (G topt ftopt) (G topt' ftopt') ty = let
       (_, VIrrelevant, _) -> pure ()
       (VLocalVar x sp, VLocalVar x' sp', _) | x == x' -> do
         debug ["M.lookup", show x]
-        unifySp cxt (M.lookup x (tcxt cxt)) sp sp' >> return ()
+        unifySp cxt (VLocalVar x) (M.lookup x (tcxt cxt)) sp sp' >> return ()
       (VUnfold h sp t, VUnfold h' sp' t', _) -> do
         hTy <- unfoldHeadType cxt h
         debug ["unfold head type", show hTy]
         case cs cxt of
           Rigid | eqUH h h' -> do
-            (unifySp (unifCxtWithConvState Flex cxt) hTy sp sp' >> pure ())
+            (unifySp (unifCxtWithConvState Flex cxt) (appSp (mcxt cxt) (valUH h)) hTy sp sp' >> pure ())
               `catch` \_ -> unifyChk (unifCxtWithConvState Full cxt) (G topt t) (G topt' t') ty
                 | otherwise -> unifyChk (unifCxtWithConvState Rigid cxt) (G topt t) (G topt' t') ty
-          Flex  | eqUH h h' -> unifySp (unifCxtWithConvState Flex cxt) hTy sp sp' >> return ()
+          Flex  | eqUH h h' -> unifySp (unifCxtWithConvState Flex cxt) (appSp (mcxt cxt) (valUH h)) hTy sp sp' >> return ()
                 | otherwise -> err
           _                 -> error "unfold in Full conversion state"
       (VUnfold h sp t, _, _) -> case cs cxt of
@@ -489,7 +563,7 @@ unifyChk cxt (G topt ftopt) (G topt' ftopt') ty = let
       (VFlex x sp, VFlex x' sp', _)
         | x == x' -> do
            xTy <- metaType cxt x
-           unifySp cxt xTy sp sp'
+           unifySp cxt (VFlex x) xTy sp sp'
            return ()
         | otherwise -> guardCS (cs cxt) >> flexFlex cxt topt x sp topt' x' sp'
       (VFlex x sp, t', ty) -> do

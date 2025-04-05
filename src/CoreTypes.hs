@@ -96,6 +96,9 @@ eqUH :: UnfoldHead -> UnfoldHead -> Bool
 eqUH (UnfoldHead# x _) (UnfoldHead# x' _) = x == x'
 {-# inline eqUH #-}
 
+valUH :: UnfoldHead -> Val
+valUH (UnfoldHead# _ v) = v
+
 unpackUH# :: UnfoldHead -> (# (# Lvl, Val #) | MetaVar #)
 unpackUH# (UnfoldHead# x v) = case x .&. 1 of
   0 -> (# (# Lvl (unsafeShiftR x 1), v #) | #)

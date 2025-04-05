@@ -1,6 +1,6 @@
 module Evaluation (
   app, inlApp, appSp, eval, force, forceAll, forceMetas, appCl,
-  appCl', quote, quote0, eval0, nf0, zonk
+  appCl', quote, quote0, eval0, nf0, zonk, doFst, doSnd
   ) where
 
 import qualified LvlSet as LS
@@ -53,6 +53,8 @@ appSp :: MetaCxt -> Val -> Spine -> Val
 appSp ms t = \case
   SId         -> t
   SApp sp u i -> inlApp ms (appSp ms t sp) u i
+  SFst sp     -> doFst (appSp ms t sp)
+  SSnd sp     -> doSnd (appSp ms t sp)
 
 data SpineLvl = SpineLvl Spine Lvl
 
@@ -170,7 +172,6 @@ forceMetasFlex ms x sp ~xsp =
     Unsolved _ _ -> pure xsp
     Solved _ _ _ v _ -> forceMetas' ms $! appSp ms v sp
 {-# noinline forceMetasFlex #-}
-
 --------------------------------------------------------------------------------
 
 quoteSp :: MetaCxt -> Lvl -> QuoteOption -> Tm -> Spine -> Tm
