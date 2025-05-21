@@ -14,7 +14,7 @@ import Presyntax (Bind(..), pattern BEmpty, pattern BSpan)
 
 empty :: Top.Cxt -> Cxt
 empty (Top.Cxt lvl info tbl ms frz typ) =
-  Cxt 0 ENil mempty tbl (M.empty (error "asked for type of unbound variable")) typ ms (NNil info) frz
+  Cxt 0 ENil mempty tbl M.empty typ ms (NNil info) frz
 {-# inline empty #-}
 
 -- | Add a new bound variable.

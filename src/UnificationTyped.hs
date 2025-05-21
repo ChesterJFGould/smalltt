@@ -15,9 +15,9 @@ import CoreTypes
 import Evaluation
 import Exceptions
 
-type TypeCxt = M.Map Lvl GTy
+type TypeCxt = M.LvlMap GTy
 
-type TopTypeCxt = M.Map Lvl GTy
+type TopTypeCxt = M.LvlMap GTy
 
 data UnifCxt = UnifCxt
   { tcxt :: TypeCxt

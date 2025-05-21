@@ -12,7 +12,7 @@ import Common
 import CoreTypes
 import Map as M
 
-type TypeCxt = M.Map Lvl GTy
+type TypeCxt = M.LvlMap GTy
 
 -- | Top-level elaboration context.
 data Cxt = Cxt {
@@ -44,7 +44,7 @@ new src len act = do
       ?mcxt = ms
       ?lvl  = 0
       ?frz  = 0
-      ?typ  = M.empty (error "undefined top entry")
+      ?typ  = M.empty
   act
 {-# inline new #-}
 
