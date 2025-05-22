@@ -16,7 +16,7 @@ size ms = coerce <$> ADL.size ms
 {-# inline size #-}
 
 fresh :: MetaCxt -> GTy -> LvlSet -> IO Int
-fresh ms ty mask = do
+fresh ms ~ty mask = do
   x <- ADL.size ms
   ADL.push ms (Unsolved mask ty)
   pure x

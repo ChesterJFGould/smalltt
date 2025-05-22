@@ -15,7 +15,7 @@ import Data.Bits
 -- Metacxt
 --------------------------------------------------------------------------------
 
-data MetaEntry = Unsolved LS.LvlSet GTy | Solved (RF.Ref MetaVar) LS.LvlSet Tm ~Val GTy
+data MetaEntry = Unsolved LS.LvlSet ~GTy | Solved (RF.Ref MetaVar) LS.LvlSet Tm ~Val ~GTy
 type MetaCxt = ADL.Array MetaEntry
 
 --------------------------------------------------------------------------------

@@ -345,42 +345,41 @@ flexFlex cxt t x ~sp t' x' ~sp' =
   solve cxt x sp t' `catch` \_ ->
   solve cxt x' sp' t
 
-calcMetaType :: UnifCxt -> VTy -> IO VTy
+calcMetaType :: UnifCxt -> VTy -> VTy
 calcMetaType cxt codom =
-  let goSp :: Lvl -> Lvl -> LS.LvlSet -> (Tm -> Tm) -> IO (Tm -> Tm)
+  let goSp :: Lvl -> Lvl -> LS.LvlSet -> Tm -> Tm
       goSp x l mask ty
-        | x == l    = return ty
+        | x == l    = ty
         | otherwise =
           let ty'
                 | LS.member x mask =
                   let (G _ xTy) = M.lookup x (tcxt cxt)
-                  in (\c -> Pi (NI NX Expl) (quote (mcxt cxt) x UnfoldNone xTy) (ty c))
-                | otherwise        = ty
-          in goSp (x + 1) l mask ty'
-  in do
-    f <- goSp 0 (lvl cxt) (mask cxt) (\c -> c)
-    return (eval (mcxt cxt) (env cxt) (f (quote (mcxt cxt) (lvl cxt) UnfoldNone codom)))
+                  in (\c -> Pi (NI NX Expl) (quote (mcxt cxt) x UnfoldNone xTy) c)
+                | otherwise        = id
+          in ty' (goSp (x + 1) l mask ty)
+      t = goSp 0 (lvl cxt) (mask cxt) (quote (mcxt cxt) (lvl cxt) UnfoldNone codom)
+  in eval (mcxt cxt) (env cxt) t
 
 -- | Create fresh meta as a value.
 freshMeta :: UnifCxt -> VTy -> IO Val
-freshMeta cxt ty = do
-  let goSp :: Lvl -> Lvl -> LS.LvlSet -> Spine -> IO Spine
+freshMeta cxt ~ty = do
+  let goSp :: Lvl -> Lvl -> LS.LvlSet -> Spine -> Spine
       goSp x l mask sp
-        | x == l    = return sp
+        | x == l    = sp
         | otherwise =
           let sp'
                 | LS.member x mask = SApp sp (VLocalVar x SId) Expl
                 | otherwise        = sp
           in goSp (x + 1) l mask sp'
-  sp <- (goSp 0 (lvl cxt) (mask cxt) SId)
-  ty' <- calcMetaType cxt ty
+  let sp = goSp 0 (lvl cxt) (mask cxt) SId
+  let ~ty' = calcMetaType cxt ty
   mvar <- MC.fresh (mcxt cxt) (gjoin ty') (mask cxt)
   pure $! VFlex (coerce mvar) sp
 
 -- | Create fresh meta as a term, under an extra binder.
 freshMetaUnderBinder :: UnifCxt -> Icit -> VTy -> IO Closure
 freshMetaUnderBinder cxt i ty = do
-  ty' <- calcMetaType cxt ty
+  let ~ty' = calcMetaType cxt ty
   mvar <- MC.fresh (mcxt cxt) (gjoin ty') (LS.insert (lvl cxt) (mask cxt))
   pure $! Closure (env cxt) (InsertedMeta (coerce mvar))
 
