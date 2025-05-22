@@ -2,3 +2,4 @@ ignore-project: False
 packages:
   /home/chester/Clone/primdata
   /home/chester/Clone/dynamic-array
+  /home/chester/Clone/ghc-strict-implicit-params
