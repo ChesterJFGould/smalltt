@@ -226,8 +226,8 @@ infer cxt topT = do
       pure $! (Infer U (gjoin VU))
 
     P.Hole _ -> do
-      (t, tv) <- freshMeta cxt VU
       (_, va) <- freshMeta cxt VU
+      (t, tv) <- freshMeta cxt va
       pure $! (Infer t (gjoin va))
 
   debug ["inferred", showTm cxt t, showValOpt cxt (g1 a) UnfoldNone]

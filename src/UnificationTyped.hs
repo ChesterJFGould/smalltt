@@ -400,7 +400,8 @@ unifySp cxt idTy sp sp' = do
     (SId,         SId          ) -> pure idTy
     (SApp sp t i, SApp sp' t' _) -> do
       (G _ ftyp) <- unifySp cxt idTy sp sp'
-      typ' <- forceCS cxt ftyp
+      -- typ' <- forceCS cxt ftyp
+      typ' <- forceCS (unifCxtWithConvState Full cxt) ftyp
       (d, c) <- assertPiType cxt i typ'
       unifyChk cxt (gjoin t) (gjoin t') d
       return (gjoin (appCl' (mcxt cxt) c t))
